@@ -11,14 +11,14 @@ Telegram-бот "Экспресс-диагностика по математик
   1. Переменные окружения BOT_TOKEN и REPORT_CHAT_ID (см. README.md)
   2. Списки TASKS_OGE и TASKS_EGE ниже — сейчас там заглушки (10+10),
      замени текст/ответ/тему на свои задания.
-  3. Текст и ссылка в CALL_TO_ACTION_TEXT / SIGNUP_URL / CONTACT_USERNAME
+  3. Ссылка для кнопки записи — переменная SIGNUP_URL
 """
 
 import asyncio
 import logging
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.client.default import DefaultBotProperties
@@ -46,9 +46,8 @@ logging.basicConfig(level=logging.INFO)
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 REPORT_CHAT_ID = int(os.environ["REPORT_CHAT_ID"])  # id чата/канала для отчётов
 
-# Ссылка/контакт для записи — ЗАМЕНИ на свои
+# Ссылка для кнопки записи — ЗАМЕНИ на свою (аккаунт школы или личный Telegram/сайт записи)
 SIGNUP_URL = os.environ.get("SIGNUP_URL", "https://t.me/your_username")
-CONTACT_USERNAME = os.environ.get("CONTACT_USERNAME", "@your_username")
 
 
 # ---------------------------------------------------------------------------
@@ -210,13 +209,10 @@ WELCOME_TEXT = (
     "какие темы у тебя уже хорошо получаются, а какие стоит повторить.\n\n"
     "Впереди 10 заданий — это займёт примерно 15–20 минут.\n"
     "Решай самостоятельно: так результат будет максимально полезным для тебя.\n\n"
-    "Готов? Давай начнём! 🚀"
+    "Готов? Давай начнём 🚀"
 )
 
-EXAM_CHOICE_TEXT = (
-    "Отлично! Для начала определимся с экзаменом.\n\n"
-    "Укажи, к какому экзамену ты планируешь готовиться:"
-)
+EXAM_CHOICE_TEXT = "Отлично! К какому экзамену ты готовишься?"
 
 NAME_PROMPT_TEXT = (
     "Хорошо! Теперь давай познакомимся 🤝\n\n"
@@ -227,12 +223,12 @@ NAME_PROMPT_TEXT = (
 GRADE_PROMPT_TEMPLATE = "Приятно познакомиться, {name}! 😊\n\nВ каком ты сейчас классе?\nВыбери свой вариант:"
 
 TASKS_INTRO_TEMPLATE = (
-    "Отлично, {name}! Всё готово. 🔥\n\n"
-    "Теперь самое главное — 10 заданий по математике.\n"
-    "Не торопись и внимательно читай условия заданий. Используй тетрадку и ручку "
+    "Отлично, {name}! Всё готово 🔥\n\n"
+    "Тест состоит из 10-ти заданий и займёт примерно 20 минут. "
+    "Не торопись и внимательно читай условия. Используй тетрадку и ручку "
     "для выполнения необходимых вычислений. Не забудь указать здесь свой финальный ответ. "
-    "Если не знаешь ответ — ничего страшного, просто двигайся дальше.\n\n"
-    "Погнали! 🚀"
+    "Если не знаешь — ничего страшного, просто двигайся дальше.\n\n"
+    "Погнали 🚀"
 )
 
 RESULT_TEMPLATE = (
@@ -244,11 +240,8 @@ RESULT_TEMPLATE = (
 RECOMMENDATION_HEADER = "📌 Персональная рекомендация:\n\n"
 
 CTA_TEXT = (
-    "Экспресс-диагностика — это только первый шаг 🙂\n"
-    "На занятиях мы разберём именно твои слабые темы и подготовим тебя к экзамену "
-    "без лишнего стресса.\n\n"
-    f"Записаться можно здесь 👉 {SIGNUP_URL}\n"
-    f"Или напиши напрямую: {CONTACT_USERNAME}"
+    "Экспресс-диагностика — это только первый шаг. Если хочешь системно подготовиться "
+    "к успешной сдаче экзамена, записывайся на занятия!"
 )
 
 
@@ -280,12 +273,9 @@ def exam_kb() -> InlineKeyboardMarkup:
 
 def grade_kb(exam: str) -> InlineKeyboardMarkup:
     grades = ["8", "9"] if exam == "oge" else ["10", "11"]
-    # даём выбрать все 4 варианта на случай учеников "на стыке"
-    grades = ["8", "9", "10", "11"]
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"{g} класс", callback_data=f"grade_{g}") for g in grades[:2]],
-        [InlineKeyboardButton(text=f"{g} класс", callback_data=f"grade_{g}") for g in grades[2:]],
-    ])
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text=f"{g} класс", callback_data=f"grade_{g}") for g in grades
+    ]])
 
 
 def start_kb() -> InlineKeyboardMarkup:
@@ -318,8 +308,31 @@ def answer_kb(task: Task) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
+def cta_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="Записаться на занятия", url=SIGNUP_URL)
+    ]])
+
+
 def tasks_for(exam: str) -> list[Task]:
     return TASKS_OGE if exam == "oge" else TASKS_EGE
+
+
+async def clear_kb(message: Message) -> None:
+    """Убирает кнопки с уже отправленного сообщения (чтобы старый экран нельзя было нажать повторно)."""
+    try:
+        await message.edit_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
+async def clear_kb_by_id(bot: Bot, chat_id: int, message_id: int | None) -> None:
+    if message_id is None:
+        return
+    try:
+        await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=None)
+    except Exception:
+        pass
 
 
 # ---------------------------------------------------------------------------
@@ -329,13 +342,16 @@ def tasks_for(exam: str) -> list[Task]:
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
     await state.clear()
+    user = message.from_user
+    await state.update_data(tg_username=user.username, tg_user_id=user.id)
     await message.answer(WELCOME_TEXT, reply_markup=start_kb())
 
 
 @router.callback_query(F.data == "start_diag")
 async def start_diag(call: CallbackQuery, state: FSMContext):
     await state.set_state(Diagnostic.choosing_exam)
-    await call.message.edit_text(EXAM_CHOICE_TEXT, reply_markup=exam_kb())
+    await clear_kb(call.message)
+    await call.message.answer(EXAM_CHOICE_TEXT, reply_markup=exam_kb())
     await call.answer()
 
 
@@ -344,7 +360,8 @@ async def choose_exam(call: CallbackQuery, state: FSMContext):
     exam = call.data.removeprefix("exam_")  # "oge" | "ege"
     await state.update_data(exam=exam)
     await state.set_state(Diagnostic.entering_name)
-    await call.message.edit_text(NAME_PROMPT_TEXT)
+    await clear_kb(call.message)
+    await call.message.answer(NAME_PROMPT_TEXT)
     await call.answer()
 
 
@@ -353,7 +370,8 @@ async def enter_name(message: Message, state: FSMContext):
     name = message.text.strip()[:50]
     await state.update_data(name=name)
     await state.set_state(Diagnostic.choosing_grade)
-    await message.answer(GRADE_PROMPT_TEMPLATE.format(name=name), reply_markup=grade_kb((await state.get_data())["exam"]))
+    exam = (await state.get_data())["exam"]
+    await message.answer(GRADE_PROMPT_TEMPLATE.format(name=name), reply_markup=grade_kb(exam))
 
 
 @router.callback_query(Diagnostic.choosing_grade, F.data.startswith("grade_"))
@@ -361,13 +379,15 @@ async def choose_grade(call: CallbackQuery, state: FSMContext):
     grade = call.data.removeprefix("grade_")
     await state.update_data(grade=grade, task_index=0, results=[])
     data = await state.get_data()
-    await call.message.edit_text(TASKS_INTRO_TEMPLATE.format(name=data["name"]), reply_markup=begin_tasks_kb())
+    await clear_kb(call.message)
+    await call.message.answer(TASKS_INTRO_TEMPLATE.format(name=data["name"]), reply_markup=begin_tasks_kb())
     await call.answer()
 
 
 @router.callback_query(F.data == "begin_tasks")
 async def begin_tasks(call: CallbackQuery, state: FSMContext):
     await state.set_state(Diagnostic.answering)
+    await clear_kb(call.message)
     await call.answer()
     await send_task(call.message, state)
 
@@ -379,9 +399,10 @@ async def send_task(message: Message, state: FSMContext):
     header = f"Задание {idx + 1}/10\n\n"
     kb = answer_kb(task)
     if task.image:
-        await message.answer_photo(FSInputFile(task.image), caption=header + task.question, reply_markup=kb)
+        sent = await message.answer_photo(FSInputFile(task.image), caption=header + task.question, reply_markup=kb)
     else:
-        await message.answer(header + task.question, reply_markup=kb)
+        sent = await message.answer(header + task.question, reply_markup=kb)
+    await state.update_data(last_kb_message_id=sent.message_id)
 
 
 async def record_answer(state: FSMContext, task: Task, given_answer: str | None):
@@ -396,6 +417,7 @@ async def record_answer(state: FSMContext, task: Task, given_answer: str | None)
 async def receive_answer(message: Message, state: FSMContext):
     data = await state.get_data()
     task = tasks_for(data["exam"])[data["task_index"]]
+    await clear_kb_by_id(message.bot, message.chat.id, data.get("last_kb_message_id"))
     await record_answer(state, task, message.text)
     await advance(message, state)
 
@@ -404,6 +426,7 @@ async def receive_answer(message: Message, state: FSMContext):
 async def skip_answer(call: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     task = tasks_for(data["exam"])[data["task_index"]]
+    await clear_kb(call.message)
     await record_answer(state, task, None)
     await call.answer()
     await advance(call.message, state)
@@ -415,6 +438,7 @@ async def choose_option(call: CallbackQuery, state: FSMContext):
     task = tasks_for(data["exam"])[data["task_index"]]
     idx = int(call.data.removeprefix("opt_"))
     given = task.options[idx] if task.options and 0 <= idx < len(task.options) else None
+    await clear_kb(call.message)
     await record_answer(state, task, given)
     await call.answer()
     await advance(call.message, state)
@@ -450,6 +474,11 @@ def build_recommendation(results: list[dict]) -> str:
     return RECOMMENDATION_HEADER + f"Стоит в первую очередь повторить:\n{bullets}\n\nЭто именно то, с чего мы начнём на занятиях."
 
 
+def build_breakdown(results: list[dict]) -> str:
+    lines = [f"Задание {i + 1} {'✅' if r['correct'] else '❌'}" for i, r in enumerate(results)]
+    return "Разбор по заданиям:\n" + "\n".join(lines)
+
+
 async def finish_diagnostic(message: Message, state: FSMContext):
     data = await state.get_data()
     results = data["results"]
@@ -457,11 +486,20 @@ async def finish_diagnostic(message: Message, state: FSMContext):
     name = data["name"]
 
     await message.answer(RESULT_TEMPLATE.format(name=name, score=score, grade_comment=grade_comment(score)))
+    await message.answer(build_breakdown(results))
     await message.answer(build_recommendation(results))
-    await message.answer(CTA_TEXT)
+    await message.answer(CTA_TEXT, reply_markup=cta_kb())
 
     await send_report(message.bot, data, score, results)
     await state.clear()
+
+
+def student_contact_line(data: dict) -> str:
+    username = data.get("tg_username")
+    user_id = data.get("tg_user_id")
+    if username:
+        return f"Telegram: @{username} (https://t.me/{username})"
+    return f"Telegram: username не указан (id {user_id})"
 
 
 async def send_report(bot: Bot, data: dict, score: int, results: list[dict]) -> None:
@@ -472,9 +510,13 @@ async def send_report(bot: Bot, data: dict, score: int, results: list[dict]) -> 
         f"Имя: {data['name']}",
         f"Класс: {data['grade']}",
         f"Экзамен: {exam_label}",
+        student_contact_line(data),
         f"Результат: {score}/10",
+        "",
+        build_breakdown(results),
     ]
     if wrong:
+        lines.append("")
         lines.append("Слабые темы: " + ", ".join(dict.fromkeys(wrong)))
     try:
         await bot.send_message(REPORT_CHAT_ID, "\n".join(lines))
