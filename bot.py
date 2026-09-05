@@ -28,11 +28,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
-    CallbackQuery,
     FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
+    KeyboardButton,
     Message,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
 )
 
 try:
@@ -240,8 +242,8 @@ RESULT_TEMPLATE = (
 RECOMMENDATION_HEADER = "📌 Персональная рекомендация:\n\n"
 
 CTA_TEXT = (
-    "Экспресс-диагностика — это только первый шаг. Если хочешь системно подготовиться "
-    "к успешной сдаче экзамена, записывайся на занятия!"
+    "Экспресс-диагностика — это только первый шаг 🙂\n"
+    "Если хочешь системно подготовиться к успешной сдаче экзамена, записывайся на занятия 👇"
 )
 
 
@@ -253,6 +255,7 @@ class Diagnostic(StatesGroup):
     choosing_exam = State()
     entering_name = State()
     choosing_grade = State()
+    confirming_start = State()
     answering = State()
 
 
@@ -264,48 +267,56 @@ def normalize(text: str) -> str:
     return re.sub(r"\s+", "", text.strip().lower().replace(",", "."))
 
 
-def exam_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="🔵 ОГЭ", callback_data="exam_oge"),
-        InlineKeyboardButton(text="🟣 ЕГЭ", callback_data="exam_ege"),
-    ]])
+SKIP_TEXT = "🤷 Не знаю / Пропустить"
 
 
-def grade_kb(exam: str) -> InlineKeyboardMarkup:
+def exam_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="🔵 ОГЭ"), KeyboardButton(text="🟣 ЕГЭ")]],
+        resize_keyboard=True,
+    )
+
+
+def grade_kb(exam: str) -> ReplyKeyboardMarkup:
     grades = ["8", "9"] if exam == "oge" else ["10", "11"]
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text=f"{g} класс", callback_data=f"grade_{g}") for g in grades
-    ]])
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=f"{g} класс") for g in grades]],
+        resize_keyboard=True,
+    )
 
 
-def start_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Начать диагностику", callback_data="start_diag")
-    ]])
+def start_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="Начать диагностику")]],
+        resize_keyboard=True,
+    )
 
 
-def begin_tasks_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Начать", callback_data="begin_tasks")
-    ]])
+def begin_tasks_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="Начать")]],
+        resize_keyboard=True,
+    )
 
 
-def answer_kb(task: Task) -> InlineKeyboardMarkup:
-    """Кнопки для задания: варианты ответа (если есть) + всегда 'пропустить'."""
-    rows: list[list[InlineKeyboardButton]] = []
+def answer_kb(task: Task) -> ReplyKeyboardMarkup:
+    """Кнопки для задания: варианты ответа (если есть) + всегда 'пропустить'.
+    Это reply-клавиатура: нажатие отправляет боту настоящее текстовое сообщение
+    от ученика с текстом кнопки — так весь диалог виден в переписке."""
+    rows: list[list[KeyboardButton]] = []
     if task.options:
         short = max(len(o) for o in task.options) <= 6
         if short:
             for i in range(0, len(task.options), 2):
-                row = [InlineKeyboardButton(text=task.options[i], callback_data=f"opt_{i}")]
+                row = [KeyboardButton(text=task.options[i])]
                 if i + 1 < len(task.options):
-                    row.append(InlineKeyboardButton(text=task.options[i + 1], callback_data=f"opt_{i + 1}"))
+                    row.append(KeyboardButton(text=task.options[i + 1]))
                 rows.append(row)
         else:
-            for i, opt in enumerate(task.options):
-                rows.append([InlineKeyboardButton(text=opt[:64], callback_data=f"opt_{i}")])
-    rows.append([InlineKeyboardButton(text="🤷 Не знаю / пропустить", callback_data="skip")])
-    return InlineKeyboardMarkup(inline_keyboard=rows)
+            for opt in task.options:
+                rows.append([KeyboardButton(text=opt[:64])])
+    rows.append([KeyboardButton(text=SKIP_TEXT)])
+    return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
 def cta_kb() -> InlineKeyboardMarkup:
@@ -316,23 +327,6 @@ def cta_kb() -> InlineKeyboardMarkup:
 
 def tasks_for(exam: str) -> list[Task]:
     return TASKS_OGE if exam == "oge" else TASKS_EGE
-
-
-async def clear_kb(message: Message) -> None:
-    """Убирает кнопки с уже отправленного сообщения (чтобы старый экран нельзя было нажать повторно)."""
-    try:
-        await message.edit_reply_markup(reply_markup=None)
-    except Exception:
-        pass
-
-
-async def clear_kb_by_id(bot: Bot, chat_id: int, message_id: int | None) -> None:
-    if message_id is None:
-        return
-    try:
-        await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=None)
-    except Exception:
-        pass
 
 
 # ---------------------------------------------------------------------------
@@ -347,22 +341,23 @@ async def cmd_start(message: Message, state: FSMContext):
     await message.answer(WELCOME_TEXT, reply_markup=start_kb())
 
 
-@router.callback_query(F.data == "start_diag")
-async def start_diag(call: CallbackQuery, state: FSMContext):
+@router.message(F.text == "Начать диагностику")
+async def start_diag(message: Message, state: FSMContext):
     await state.set_state(Diagnostic.choosing_exam)
-    await clear_kb(call.message)
-    await call.message.answer(EXAM_CHOICE_TEXT, reply_markup=exam_kb())
-    await call.answer()
+    await message.answer(EXAM_CHOICE_TEXT, reply_markup=exam_kb())
 
 
-@router.callback_query(Diagnostic.choosing_exam, F.data.startswith("exam_"))
-async def choose_exam(call: CallbackQuery, state: FSMContext):
-    exam = call.data.removeprefix("exam_")  # "oge" | "ege"
+@router.message(Diagnostic.choosing_exam, F.text.in_(["🔵 ОГЭ", "🟣 ЕГЭ"]))
+async def choose_exam(message: Message, state: FSMContext):
+    exam = "oge" if message.text == "🔵 ОГЭ" else "ege"
     await state.update_data(exam=exam)
     await state.set_state(Diagnostic.entering_name)
-    await clear_kb(call.message)
-    await call.message.answer(NAME_PROMPT_TEXT)
-    await call.answer()
+    await message.answer(NAME_PROMPT_TEXT, reply_markup=ReplyKeyboardRemove())
+
+
+@router.message(Diagnostic.choosing_exam)
+async def choose_exam_fallback(message: Message):
+    await message.answer("Пожалуйста, выбери один из вариантов на клавиатуре ниже 👇")
 
 
 @router.message(Diagnostic.entering_name)
@@ -374,22 +369,29 @@ async def enter_name(message: Message, state: FSMContext):
     await message.answer(GRADE_PROMPT_TEMPLATE.format(name=name), reply_markup=grade_kb(exam))
 
 
-@router.callback_query(Diagnostic.choosing_grade, F.data.startswith("grade_"))
-async def choose_grade(call: CallbackQuery, state: FSMContext):
-    grade = call.data.removeprefix("grade_")
+@router.message(Diagnostic.choosing_grade, F.text.in_(["8 класс", "9 класс", "10 класс", "11 класс"]))
+async def choose_grade(message: Message, state: FSMContext):
+    grade = message.text.split()[0]
     await state.update_data(grade=grade, task_index=0, results=[])
+    await state.set_state(Diagnostic.confirming_start)
     data = await state.get_data()
-    await clear_kb(call.message)
-    await call.message.answer(TASKS_INTRO_TEMPLATE.format(name=data["name"]), reply_markup=begin_tasks_kb())
-    await call.answer()
+    await message.answer(TASKS_INTRO_TEMPLATE.format(name=data["name"]), reply_markup=begin_tasks_kb())
 
 
-@router.callback_query(F.data == "begin_tasks")
-async def begin_tasks(call: CallbackQuery, state: FSMContext):
+@router.message(Diagnostic.choosing_grade)
+async def choose_grade_fallback(message: Message):
+    await message.answer("Пожалуйста, выбери свой класс на клавиатуре ниже 👇")
+
+
+@router.message(Diagnostic.confirming_start, F.text == "Начать")
+async def begin_tasks(message: Message, state: FSMContext):
     await state.set_state(Diagnostic.answering)
-    await clear_kb(call.message)
-    await call.answer()
-    await send_task(call.message, state)
+    await send_task(message, state)
+
+
+@router.message(Diagnostic.confirming_start)
+async def begin_tasks_fallback(message: Message):
+    await message.answer("Нажми «Начать» на клавиатуре ниже, когда будешь готов 👇")
 
 
 async def send_task(message: Message, state: FSMContext):
@@ -399,17 +401,21 @@ async def send_task(message: Message, state: FSMContext):
     header = f"Задание {idx + 1}/10\n\n"
     kb = answer_kb(task)
     if task.image:
-        sent = await message.answer_photo(FSInputFile(task.image), caption=header + task.question, reply_markup=kb)
+        await message.answer_photo(FSInputFile(task.image), caption=header + task.question, reply_markup=kb)
     else:
-        sent = await message.answer(header + task.question, reply_markup=kb)
-    await state.update_data(last_kb_message_id=sent.message_id)
+        await message.answer(header + task.question, reply_markup=kb)
 
 
-async def record_answer(state: FSMContext, task: Task, given_answer: str | None):
+async def record_answer(state: FSMContext, task: Task, given_text: str) -> None:
     data = await state.get_data()
     results = data["results"]
-    correct = given_answer is not None and normalize(given_answer) == normalize(task.answer)
-    results.append({"topic": task.topic, "correct": correct})
+    if given_text == SKIP_TEXT:
+        status = "skipped"
+    elif normalize(given_text) == normalize(task.answer):
+        status = "correct"
+    else:
+        status = "wrong"
+    results.append({"topic": task.topic, "status": status})
     await state.update_data(results=results, task_index=data["task_index"] + 1)
 
 
@@ -417,31 +423,8 @@ async def record_answer(state: FSMContext, task: Task, given_answer: str | None)
 async def receive_answer(message: Message, state: FSMContext):
     data = await state.get_data()
     task = tasks_for(data["exam"])[data["task_index"]]
-    await clear_kb_by_id(message.bot, message.chat.id, data.get("last_kb_message_id"))
     await record_answer(state, task, message.text)
     await advance(message, state)
-
-
-@router.callback_query(Diagnostic.answering, F.data == "skip")
-async def skip_answer(call: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    task = tasks_for(data["exam"])[data["task_index"]]
-    await clear_kb(call.message)
-    await record_answer(state, task, None)
-    await call.answer()
-    await advance(call.message, state)
-
-
-@router.callback_query(Diagnostic.answering, F.data.startswith("opt_"))
-async def choose_option(call: CallbackQuery, state: FSMContext):
-    data = await state.get_data()
-    task = tasks_for(data["exam"])[data["task_index"]]
-    idx = int(call.data.removeprefix("opt_"))
-    given = task.options[idx] if task.options and 0 <= idx < len(task.options) else None
-    await clear_kb(call.message)
-    await record_answer(state, task, given)
-    await call.answer()
-    await advance(call.message, state)
 
 
 async def advance(message: Message, state: FSMContext):
@@ -461,12 +444,12 @@ def grade_comment(score: int) -> str:
 
 
 def build_recommendation(results: list[dict]) -> str:
-    wrong_topics = [r["topic"] for r in results if not r["correct"]]
-    if not wrong_topics:
+    weak_topics = [r["topic"] for r in results if r["status"] != "correct"]
+    if not weak_topics:
         return RECOMMENDATION_HEADER + "Ты справился со всеми заданиями — держим высокий уровень и переходим к более сложным задачам! 💪"
     # берём до 3 самых частых слабых тем, сохраняя порядок появления
     seen = []
-    for t in wrong_topics:
+    for t in weak_topics:
         if t not in seen:
             seen.append(t)
     top = seen[:3]
@@ -474,18 +457,24 @@ def build_recommendation(results: list[dict]) -> str:
     return RECOMMENDATION_HEADER + f"Стоит в первую очередь повторить:\n{bullets}\n\nЭто именно то, с чего мы начнём на занятиях."
 
 
+STATUS_EMOJI = {"correct": "✅", "wrong": "❌", "skipped": "🤷"}
+
+
 def build_breakdown(results: list[dict]) -> str:
-    lines = [f"Задание {i + 1} {'✅' if r['correct'] else '❌'}" for i, r in enumerate(results)]
+    lines = [f"Задание {i + 1} {STATUS_EMOJI[r['status']]}" for i, r in enumerate(results)]
     return "Разбор по заданиям:\n" + "\n".join(lines)
 
 
 async def finish_diagnostic(message: Message, state: FSMContext):
     data = await state.get_data()
     results = data["results"]
-    score = sum(1 for r in results if r["correct"])
+    score = sum(1 for r in results if r["status"] == "correct")
     name = data["name"]
 
-    await message.answer(RESULT_TEMPLATE.format(name=name, score=score, grade_comment=grade_comment(score)))
+    await message.answer(
+        RESULT_TEMPLATE.format(name=name, score=score, grade_comment=grade_comment(score)),
+        reply_markup=ReplyKeyboardRemove(),
+    )
     await message.answer(build_breakdown(results))
     await message.answer(build_recommendation(results))
     await message.answer(CTA_TEXT, reply_markup=cta_kb())
@@ -504,7 +493,7 @@ def student_contact_line(data: dict) -> str:
 
 async def send_report(bot: Bot, data: dict, score: int, results: list[dict]) -> None:
     exam_label = "ОГЭ" if data["exam"] == "oge" else "ЕГЭ"
-    wrong = [r["topic"] for r in results if not r["correct"]]
+    weak = [r["topic"] for r in results if r["status"] != "correct"]
     lines = [
         "📋 Новый результат диагностики",
         f"Имя: {data['name']}",
@@ -515,9 +504,9 @@ async def send_report(bot: Bot, data: dict, score: int, results: list[dict]) -> 
         "",
         build_breakdown(results),
     ]
-    if wrong:
+    if weak:
         lines.append("")
-        lines.append("Слабые темы: " + ", ".join(dict.fromkeys(wrong)))
+        lines.append("Слабые темы: " + ", ".join(dict.fromkeys(weak)))
     try:
         await bot.send_message(REPORT_CHAT_ID, "\n".join(lines))
     except Exception:
