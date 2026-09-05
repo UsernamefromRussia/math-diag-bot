@@ -28,6 +28,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import (
+    CallbackQuery,
     FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -68,18 +69,21 @@ class Task:
 TASKS_OGE: list[Task] = [
     Task(
         "Дроби и вычисления",
-        "Найдите значение выражения: (5/6 + 0,3) · 15",
+        "Найдите значение выражения:",
         "17",
+        image="images/oge_01_fractions.jpg",
     ),
     Task(
         "Степени и корни",
-        "Найдите значение выражения: (3√2)² / (2² · 3²)",
+        "Найдите значение выражения:",
         "0.5",
+        image="images/oge_02_powers.jpg",
     ),
     Task(
         "Линейные уравнения",
-        "Найдите корень уравнения: 3(x + 8) − 2(x − 8) = 8",
+        "Найдите корень уравнения:",
         "-32",
+        image="images/oge_03_equation.jpg",
     ),
     Task(
         "Теория вероятностей",
@@ -98,9 +102,10 @@ TASKS_OGE: list[Task] = [
     ),
     Task(
         "Квадратные неравенства",
-        "Укажите решение неравенства: x² − 16 ≤ 0",
+        "Укажите решение неравенства:",
         "[−4; 4]",
         options=["(−∞; −4] ∪ [4; +∞)", "[−4; 4]", "(−∞; 4]", "[0; 16]"],
+        image="images/oge_06_inequality.jpg",
     ),
     Task(
         "Прогрессии",
@@ -144,13 +149,15 @@ TASKS_EGE: list[Task] = [
     ),
     Task(
         "Векторы",
-        "Даны векторы a(2;2) и b(2;−2). Найдите длину вектора 7a + b.",
+        "Даны векторы a и b. Найдите длину вектора 7a + b.",
         "20",
+        image="images/ege_02_vectors.png",
     ),
     Task(
         "Стереометрия",
         "Цилиндр, объём которого равен 18, описан около шара. Найдите объём шара.",
         "12",
+        image="images/ege_03_cylinder_sphere.png",
     ),
     Task(
         "Вероятность",
@@ -170,19 +177,21 @@ TASKS_EGE: list[Task] = [
     ),
     Task(
         "Логарифмические уравнения",
-        "Найдите корень уравнения log₈(5x + 47) = 3.",
+        "Найдите корень уравнения:",
         "93",
+        image="images/ege_06_log_equation.png",
     ),
     Task(
         "Тригонометрия",
-        "Найдите значение выражения: 3·sin164° / (sin82° · sin8°).",
+        "Найдите значение выражения:",
         "6",
+        image="images/ege_07_trig.png",
     ),
     Task(
         "Производная и графики",
         "На рисунке изображены график функции y = f(x) и касательная к нему в точке с абсциссой x0. "
         "Найдите значение производной функции f(x) в точке x0.",
-        "0.2",
+        "-0.2",
         image="images/ege_08_derivative.png",
     ),
     Task(
@@ -320,9 +329,10 @@ def answer_kb(task: Task) -> ReplyKeyboardMarkup:
 
 
 def cta_kb() -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="Записаться на занятия", url=SIGNUP_URL)
-    ]])
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Записаться на занятия", url=SIGNUP_URL)],
+        [InlineKeyboardButton(text="Пройти новую диагностику", callback_data="restart_diag")],
+    ])
 
 
 def tasks_for(exam: str) -> list[Task]:
@@ -335,10 +345,19 @@ def tasks_for(exam: str) -> list[Task]:
 
 @router.message(CommandStart())
 async def cmd_start(message: Message, state: FSMContext):
+    await start_welcome(message.answer, state, message.from_user)
+
+
+@router.callback_query(F.data == "restart_diag")
+async def restart_diag(call: CallbackQuery, state: FSMContext):
+    await call.answer()
+    await start_welcome(call.message.answer, state, call.from_user)
+
+
+async def start_welcome(send, state: FSMContext, user) -> None:
     await state.clear()
-    user = message.from_user
     await state.update_data(tg_username=user.username, tg_user_id=user.id)
-    await message.answer(WELCOME_TEXT, reply_markup=start_kb())
+    await send(WELCOME_TEXT, reply_markup=start_kb())
 
 
 @router.message(F.text == "Начать диагностику")
