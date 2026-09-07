@@ -500,9 +500,14 @@ async def send_task(message: Message, state: FSMContext):
     header = f"Задание {idx + 1}/10\n\n"
     kb = answer_kb(task)
     if task.image:
-        await message.answer_photo(FSInputFile(task.image), caption=header + task.question, reply_markup=kb)
-    else:
-        await message.answer(header + task.question, reply_markup=kb)
+        try:
+            await message.answer_photo(FSInputFile(task.image), caption=header + task.question, reply_markup=kb)
+            return
+        except Exception:
+            # если картинка почему-то не отправилась (например, слишком маленький файл) —
+            # не роняем весь сценарий молча, а показываем хотя бы текст задания
+            logging.exception("Не удалось отправить картинку %s для задания", task.image)
+    await message.answer(header + task.question, reply_markup=kb)
 
 
 async def record_answer(state: FSMContext, task: Task, given_text: str) -> None:
