@@ -209,6 +209,74 @@ TASKS_EGE: list[Task] = [
     ),
 ]
 
+TASKS_EGE_BASE: list[Task] = [
+    Task(
+        "Дроби и вычисления",
+        "Найдите значение выражения:",
+        "2.65",
+        image="images/egebase_01_fraction.png",
+    ),
+    Task(
+        "Чтение графиков",
+        "На графике показан процесс разогрева двигателя легкового автомобиля. На оси абсцисс — время в минутах "
+        "с момента запуска двигателя, на оси ординат — температура двигателя в градусах Цельсия. Определите по "
+        "графику, сколько минут двигатель нагревался от температуры 60 °C до температуры 90 °C.",
+        "3",
+        image="images/egebase_02_heating_graph.png",
+    ),
+    Task(
+        "Теория вероятностей",
+        "Маша включает телевизор. Телевизор включается на случайном канале. В это время по девяти каналам "
+        "из сорока пяти показывают новости. Найдите вероятность того, что Маша попадёт на канал, где новости не идут.",
+        "0.8",
+    ),
+    Task(
+        "Уравнения",
+        "Решите уравнение. Если уравнение имеет более одного корня, в ответе укажите меньший из них.",
+        "-1",
+        image="images/egebase_04_equation.png",
+    ),
+    Task(
+        "Корни и вычисления",
+        "Найдите значение выражения:",
+        "-9",
+        image="images/egebase_05_roots.png",
+    ),
+    Task(
+        "Текстовая задача (проценты)",
+        "Флакон шампуня стоит 160 рублей. Какое наибольшее число флаконов можно купить на 1000 рублей во время "
+        "распродажи, когда скидка составляет 25%?",
+        "8",
+    ),
+    Task(
+        "Тригонометрия",
+        "Найдите значение выражения:",
+        "16.5",
+        image="images/egebase_07_trig.png",
+    ),
+    Task(
+        "Планиметрия (план местности)",
+        "План местности разбит на клетки. Каждая клетка обозначает квадрат 1 м × 1 м. Найдите площадь участка, "
+        "изображённого на плане. Ответ дайте в квадратных метрах.",
+        "18",
+        image="images/egebase_08_plan.png",
+    ),
+    Task(
+        "Стереометрия",
+        "Плоскость, проходящая через три точки A, B и C, разбивает куб на два многогранника. Сколько граней "
+        "у многогранника, у которого больше граней?",
+        "7",
+        image="images/egebase_09_cube.png",
+    ),
+    Task(
+        "Текстовая задача (движение)",
+        "Из городов A и B, расстояние между которыми равно 330 км, навстречу друг другу одновременно выехали "
+        "два автомобиля и встретились через 3 часа на расстоянии 180 км от города B. Найдите скорость автомобиля, "
+        "выехавшего из города A. Ответ дайте в км/ч.",
+        "50",
+    ),
+]
+
 
 # ---------------------------------------------------------------------------
 # ТЕКСТЫ ЭКРАНОВ
@@ -280,9 +348,16 @@ def normalize(text: str) -> str:
 SKIP_TEXT = "🤷 Не знаю / Пропустить"
 
 
+EXAM_LABELS = {"oge": "ОГЭ", "ege": "ЕГЭ (профиль)", "ege_base": "ЕГЭ (база)"}
+EXAM_BUTTONS = {"🔵 ОГЭ": "oge", "🟣 ЕГЭ (профиль)": "ege", "🟢 ЕГЭ (база)": "ege_base"}
+
+
 def exam_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="🔵 ОГЭ"), KeyboardButton(text="🟣 ЕГЭ")]],
+        keyboard=[
+            [KeyboardButton(text="🔵 ОГЭ"), KeyboardButton(text="🟣 ЕГЭ (профиль)")],
+            [KeyboardButton(text="🟢 ЕГЭ (база)")],
+        ],
         resize_keyboard=True,
     )
 
@@ -337,7 +412,11 @@ def cta_kb() -> InlineKeyboardMarkup:
 
 
 def tasks_for(exam: str) -> list[Task]:
-    return TASKS_OGE if exam == "oge" else TASKS_EGE
+    if exam == "oge":
+        return TASKS_OGE
+    if exam == "ege_base":
+        return TASKS_EGE_BASE
+    return TASKS_EGE
 
 
 # ---------------------------------------------------------------------------
@@ -367,9 +446,9 @@ async def start_diag(message: Message, state: FSMContext):
     await message.answer(EXAM_CHOICE_TEXT, reply_markup=exam_kb())
 
 
-@router.message(Diagnostic.choosing_exam, F.text.in_(["🔵 ОГЭ", "🟣 ЕГЭ"]))
+@router.message(Diagnostic.choosing_exam, F.text.in_(list(EXAM_BUTTONS.keys())))
 async def choose_exam(message: Message, state: FSMContext):
-    exam = "oge" if message.text == "🔵 ОГЭ" else "ege"
+    exam = EXAM_BUTTONS[message.text]
     await state.update_data(exam=exam)
     await state.set_state(Diagnostic.entering_name)
     await message.answer(NAME_PROMPT_TEXT, reply_markup=ReplyKeyboardRemove())
@@ -512,7 +591,7 @@ def student_contact_line(data: dict) -> str:
 
 
 async def send_report(bot: Bot, data: dict, score: int, results: list[dict]) -> None:
-    exam_label = "ОГЭ" if data["exam"] == "oge" else "ЕГЭ"
+    exam_label = EXAM_LABELS[data["exam"]]
     weak = [r["topic"] for r in results if r["status"] != "correct"]
     lines = [
         "📋 Новый результат диагностики",
