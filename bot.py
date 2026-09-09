@@ -347,6 +347,7 @@ def normalize(text: str) -> str:
 
 
 SKIP_TEXT = "🤷 Не знаю / Пропустить"
+BACK_TEXT = "⬅️ Назад"
 
 
 EXAM_LABELS = {"oge": "ОГЭ", "ege": "ЕГЭ (профиль)", "ege_base": "ЕГЭ (база)"}
@@ -358,7 +359,15 @@ def exam_kb() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="🔵 ОГЭ"), KeyboardButton(text="🟣 ЕГЭ (профиль)")],
             [KeyboardButton(text="🟢 ЕГЭ (база)")],
+            [KeyboardButton(text=BACK_TEXT)],
         ],
+        resize_keyboard=True,
+    )
+
+
+def name_prompt_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=BACK_TEXT)]],
         resize_keyboard=True,
     )
 
@@ -366,7 +375,10 @@ def exam_kb() -> ReplyKeyboardMarkup:
 def grade_kb(exam: str) -> ReplyKeyboardMarkup:
     grades = ["8", "9"] if exam == "oge" else ["10", "11"]
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text=f"{g} класс") for g in grades]],
+        keyboard=[
+            [KeyboardButton(text=f"{g} класс") for g in grades],
+            [KeyboardButton(text=BACK_TEXT)],
+        ],
         resize_keyboard=True,
     )
 
@@ -380,13 +392,13 @@ def start_kb() -> ReplyKeyboardMarkup:
 
 def begin_tasks_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Начать")]],
+        keyboard=[[KeyboardButton(text="Начать")], [KeyboardButton(text=BACK_TEXT)]],
         resize_keyboard=True,
     )
 
 
 def answer_kb(task: Task) -> ReplyKeyboardMarkup:
-    """Кнопки для задания: варианты ответа (если есть) + всегда 'пропустить'.
+    """Кнопки для задания: варианты ответа (если есть) + всегда 'пропустить' и 'назад'.
     Это reply-клавиатура: нажатие отправляет боту настоящее текстовое сообщение
     от ученика с текстом кнопки — так весь диалог виден в переписке."""
     rows: list[list[KeyboardButton]] = []
@@ -402,6 +414,7 @@ def answer_kb(task: Task) -> ReplyKeyboardMarkup:
             for opt in task.options:
                 rows.append([KeyboardButton(text=opt[:64])])
     rows.append([KeyboardButton(text=SKIP_TEXT)])
+    rows.append([KeyboardButton(text=BACK_TEXT)])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
 
@@ -452,12 +465,23 @@ async def choose_exam(message: Message, state: FSMContext):
     exam = EXAM_BUTTONS[message.text]
     await state.update_data(exam=exam)
     await state.set_state(Diagnostic.entering_name)
-    await message.answer(NAME_PROMPT_TEXT, reply_markup=ReplyKeyboardRemove())
+    await message.answer(NAME_PROMPT_TEXT, reply_markup=name_prompt_kb())
+
+
+@router.message(Diagnostic.choosing_exam, F.text == BACK_TEXT)
+async def exam_back(message: Message, state: FSMContext):
+    await start_welcome(message.answer, state, message.from_user)
 
 
 @router.message(Diagnostic.choosing_exam)
 async def choose_exam_fallback(message: Message):
     await message.answer("Пожалуйста, выбери один из вариантов на клавиатуре ниже 👇")
+
+
+@router.message(Diagnostic.entering_name, F.text == BACK_TEXT)
+async def name_back(message: Message, state: FSMContext):
+    await state.set_state(Diagnostic.choosing_exam)
+    await message.answer(EXAM_CHOICE_TEXT, reply_markup=exam_kb())
 
 
 @router.message(Diagnostic.entering_name)
@@ -478,6 +502,12 @@ async def choose_grade(message: Message, state: FSMContext):
     await message.answer(TASKS_INTRO_TEMPLATE.format(name=data["name"]), reply_markup=begin_tasks_kb())
 
 
+@router.message(Diagnostic.choosing_grade, F.text == BACK_TEXT)
+async def grade_back(message: Message, state: FSMContext):
+    await state.set_state(Diagnostic.choosing_exam)
+    await message.answer(EXAM_CHOICE_TEXT, reply_markup=exam_kb())
+
+
 @router.message(Diagnostic.choosing_grade)
 async def choose_grade_fallback(message: Message):
     await message.answer("Пожалуйста, выбери свой класс на клавиатуре ниже 👇")
@@ -487,6 +517,13 @@ async def choose_grade_fallback(message: Message):
 async def begin_tasks(message: Message, state: FSMContext):
     await state.set_state(Diagnostic.answering)
     await send_task(message, state)
+
+
+@router.message(Diagnostic.confirming_start, F.text == BACK_TEXT)
+async def confirm_back(message: Message, state: FSMContext):
+    data = await state.get_data()
+    await state.set_state(Diagnostic.choosing_grade)
+    await message.answer(GRADE_PROMPT_TEMPLATE.format(name=data["name"]), reply_markup=grade_kb(data["exam"]))
 
 
 @router.message(Diagnostic.confirming_start)
@@ -522,6 +559,22 @@ async def record_answer(state: FSMContext, task: Task, given_text: str) -> None:
         status = "wrong"
     results.append({"topic": task.topic, "status": status})
     await state.update_data(results=results, task_index=data["task_index"] + 1)
+
+
+@router.message(Diagnostic.answering, F.text == BACK_TEXT)
+async def task_back(message: Message, state: FSMContext):
+    data = await state.get_data()
+    idx = data["task_index"]
+    if idx == 0:
+        # ещё не отвечали ни на одно задание — возвращаемся к экрану-заставке
+        await state.set_state(Diagnostic.confirming_start)
+        await message.answer(TASKS_INTRO_TEMPLATE.format(name=data["name"]), reply_markup=begin_tasks_kb())
+        return
+    # убираем последний записанный ответ и повторно показываем предыдущее задание
+    results = data["results"]
+    results.pop()
+    await state.update_data(results=results, task_index=idx - 1)
+    await send_task(message, state)
 
 
 @router.message(Diagnostic.answering)
