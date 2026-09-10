@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-Telegram-бот "Экспресс-диагностика по математике"
+Telegram-бот "Экспресс-диагностика" (математика и физика)
 Стек: aiogram 3.x, long polling (без вебхуков — проще всего задеплоить).
 
 Как это работает:
-  Приветствие -> ОГЭ/ЕГЭ -> Имя -> Класс -> 10 заданий -> Результат ->
-  Рекомендация -> Призыв к записи -> Отчёт репетитору в отдельный чат
+  Приветствие -> Предмет (Математика/Физика) -> ОГЭ/ЕГЭ -> Имя -> Класс ->
+  N заданий -> Результат -> Рекомендация -> Призыв к записи -> Отчёт репетитору в отдельный чат
 
 ГДЕ ВСТАВЛЯТЬ СВОИ ДАННЫЕ:
   1. Переменные окружения BOT_TOKEN и REPORT_CHAT_ID (см. README.md)
-  2. Списки TASKS_OGE и TASKS_EGE ниже — сейчас там заглушки (10+10),
-     замени текст/ответ/тему на свои задания.
+  2. Списки TASKS_OGE / TASKS_EGE / TASKS_EGE_BASE / TASKS_PHYSICS_OGE / TASKS_PHYSICS_EGE
+     ниже — замени текст/ответ/тему на свои задания.
   3. Ссылка для кнопки записи — переменная SIGNUP_URL
 """
 
@@ -278,6 +278,93 @@ TASKS_EGE_BASE: list[Task] = [
     ),
 ]
 
+TASKS_PHYSICS_OGE: list[Task] = [
+    Task(
+        "Тепловые явления",
+        "Какое количество теплоты необходимо для нагревания 2 кг воды от 20 °C до 30 °C? "
+        "Удельная теплоёмкость воды 4200 Дж/(кг·°C). Ответ дайте в джоулях.",
+        "84000",
+    ),
+    Task(
+        "Закон Ома",
+        "Через спираль электроплитки сопротивлением 20 Ом проходит ток силой 2 А. "
+        "Найдите мощность тока в спирали. Ответ дайте в ваттах.",
+        "80",
+    ),
+    Task(
+        "Последовательное соединение проводников",
+        "Две лампы сопротивлениями 6 Ом и 3 Ом соединены последовательно. Напряжение источника 18 В. "
+        "Найдите силу тока в цепи. Ответ дайте в амперах.",
+        "2",
+    ),
+    Task(
+        "Магнитное действие тока",
+        "Почему магнитная стрелка компаса отклоняется рядом с проводником, по которому идёт электрический ток?",
+        "Проводник с током создаёт магнитное поле",
+        options=[
+            "Проводник с током создаёт магнитное поле",
+            "Проводник нагревается, и стрелка реагирует на тепло",
+            "Ток создаёт вокруг себя статическое электричество",
+            "Стрелка сама становится источником тока",
+        ],
+    ),
+    Task(
+        "Отражение света",
+        "Луч света падает на плоское зеркало под углом 35° к нормали. Чему равен угол между падающим "
+        "и отражённым лучами? Ответ дайте в градусах.",
+        "70",
+    ),
+    Task(
+        "Работа электрического тока",
+        "Электрический чайник мощностью 1,5 кВт работал 4 минуты. Определите работу электрического тока. "
+        "Ответ дайте в килоджоулях.",
+        "360",
+    ),
+]
+
+TASKS_PHYSICS_EGE: list[Task] = [
+    Task(
+        "Равномерное движение",
+        "Автомобиль движется равномерно со скоростью 72 км/ч. Какой путь он пройдёт за 25 с? "
+        "Ответ дайте в метрах.",
+        "500",
+    ),
+    Task(
+        "Равноускоренное движение",
+        "Тело начинает движение из состояния покоя с постоянным ускорением 2 м/с². Какую скорость "
+        "оно приобретёт через 6 с? Ответ дайте в м/с.",
+        "12",
+    ),
+    Task(
+        "Второй закон Ньютона",
+        "На тело массой 4 кг действует равнодействующая сила 12 Н. Найдите ускорение тела. "
+        "Ответ дайте в м/с².",
+        "3",
+    ),
+    Task(
+        "Механическая энергия",
+        "Камень массой 0,5 кг находится на высоте 8 м над землёй. Найдите его потенциальную энергию "
+        "относительно земли. Примите g = 10 м/с². Ответ дайте в джоулях.",
+        "40",
+    ),
+    Task(
+        "Импульс",
+        "Тележка массой 2 кг движется со скоростью 3 м/с и сцепляется с неподвижной тележкой массой 1 кг. "
+        "Найдите скорость тележек после сцепления. Ответ дайте в м/с.",
+        "2",
+    ),
+    Task(
+        "Механические колебания",
+        "Маятник совершил 20 полных колебаний за 40 с. Найдите период колебаний. Ответ дайте в секундах.",
+        "2",
+    ),
+]
+
+TASKS: dict[str, dict[str, list[Task]]] = {
+    "math": {"oge": TASKS_OGE, "ege": TASKS_EGE, "ege_base": TASKS_EGE_BASE},
+    "physics": {"oge": TASKS_PHYSICS_OGE, "ege": TASKS_PHYSICS_EGE},
+}
+
 
 # ---------------------------------------------------------------------------
 # ТЕКСТЫ ЭКРАНОВ
@@ -285,15 +372,17 @@ TASKS_EGE_BASE: list[Task] = [
 
 WELCOME_TEXT = (
     "👋 Привет!\n\n"
-    "Это экспресс-диагностика по математике. Она поможет понять, "
+    "Это экспресс-диагностика по математике и физике. Она поможет понять, "
     "какие темы у тебя уже хорошо получаются, а какие стоит повторить.\n\n"
-    "Впереди 10 заданий — они займут примерно 15–20 минут твоего времени.\n\n"
+    "Впереди несколько заданий — они займут примерно 15–20 минут твоего времени.\n\n"
     "Решай самостоятельно, так ты сможешь реально оценить свои знания, "
     "а мы определить твой уровень подготовки.\n\n"
     "Давай начнём 🚀"
 )
 
-EXAM_CHOICE_TEXT = "Отлично! К какому экзамену ты готовишься?"
+SUBJECT_CHOICE_TEXT = "Отлично! По какому предмету ты хочешь пройти диагностику?"
+
+EXAM_CHOICE_TEXT = "К какому экзамену ты хочешь подготовиться?"
 
 NAME_PROMPT_TEXT = (
     "Хорошо! Теперь давай познакомимся 🤝\n\n"
@@ -305,7 +394,6 @@ GRADE_PROMPT_TEMPLATE = "Приятно познакомиться, {name}! 😊
 
 TASKS_INTRO_TEMPLATE = (
     "Отлично, {name}! Всё готово 🔥\n\n"
-    "Тест состоит из 10 заданий и займёт примерно 20 минут. "
     "Не торопись и внимательно читай условия. Используй тетрадку и ручку "
     "для выполнения необходимых вычислений. Не забудь указать здесь свой финальный ответ. "
     "Если не знаешь — ничего страшного, просто двигайся дальше.\n\n"
@@ -314,7 +402,7 @@ TASKS_INTRO_TEMPLATE = (
 
 RESULT_TEMPLATE = (
     "🏁 Готово, {name}!\n\n"
-    "Твой результат: {score}/10 верных ответов.\n"
+    "Твой результат: {score}/{total} верных ответов.\n"
     "{grade_comment}"
 )
 
@@ -331,6 +419,7 @@ CTA_TEXT = (
 # ---------------------------------------------------------------------------
 
 class Diagnostic(StatesGroup):
+    choosing_subject = State()
     choosing_exam = State()
     entering_name = State()
     choosing_grade = State()
@@ -350,19 +439,42 @@ SKIP_TEXT = "🤷 Не знаю / Пропустить"
 BACK_TEXT = "⬅️ Назад"
 
 
-EXAM_LABELS = {"oge": "ОГЭ", "ege": "ЕГЭ (профиль)", "ege_base": "ЕГЭ (база)"}
-EXAM_BUTTONS = {"🔵 ОГЭ": "oge", "🟣 ЕГЭ (профиль)": "ege", "🟢 ЕГЭ (база)": "ege_base"}
+SUBJECT_LABELS = {"math": "Математика", "physics": "Физика"}
+SUBJECT_BUTTONS = {"🧮 Математика": "math", "🔬 Физика": "physics"}
+
+EXAM_LABELS_BY_SUBJECT = {
+    "math": {"oge": "ОГЭ", "ege": "ЕГЭ (профиль)", "ege_base": "ЕГЭ (база)"},
+    "physics": {"oge": "ОГЭ", "ege": "ЕГЭ"},
+}
+EXAM_BUTTONS_BY_SUBJECT = {
+    "math": {"🔵 ОГЭ": "oge", "🟣 ЕГЭ (профиль)": "ege", "🟢 ЕГЭ (база)": "ege_base"},
+    "physics": {"🔵 ОГЭ": "oge", "🟣 ЕГЭ": "ege"},
+}
 
 
-def exam_kb() -> ReplyKeyboardMarkup:
+def subject_kb() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="🔵 ОГЭ"), KeyboardButton(text="🟣 ЕГЭ (профиль)")],
-            [KeyboardButton(text="🟢 ЕГЭ (база)")],
+            [KeyboardButton(text=t) for t in SUBJECT_BUTTONS],
             [KeyboardButton(text=BACK_TEXT)],
         ],
         resize_keyboard=True,
     )
+
+
+def exam_kb(subject: str) -> ReplyKeyboardMarkup:
+    if subject == "math":
+        keyboard = [
+            [KeyboardButton(text="🔵 ОГЭ"), KeyboardButton(text="🟣 ЕГЭ (профиль)")],
+            [KeyboardButton(text="🟢 ЕГЭ (база)")],
+            [KeyboardButton(text=BACK_TEXT)],
+        ]
+    else:
+        keyboard = [
+            [KeyboardButton(text="🔵 ОГЭ"), KeyboardButton(text="🟣 ЕГЭ")],
+            [KeyboardButton(text=BACK_TEXT)],
+        ]
+    return ReplyKeyboardMarkup(keyboard=keyboard, resize_keyboard=True)
 
 
 def name_prompt_kb() -> ReplyKeyboardMarkup:
@@ -425,12 +537,8 @@ def cta_kb() -> InlineKeyboardMarkup:
     ])
 
 
-def tasks_for(exam: str) -> list[Task]:
-    if exam == "oge":
-        return TASKS_OGE
-    if exam == "ege_base":
-        return TASKS_EGE_BASE
-    return TASKS_EGE
+def tasks_for(subject: str, exam: str) -> list[Task]:
+    return TASKS[subject][exam]
 
 
 # ---------------------------------------------------------------------------
@@ -456,32 +564,53 @@ async def start_welcome(send, state: FSMContext, user) -> None:
 
 @router.message(F.text == "Начать диагностику")
 async def start_diag(message: Message, state: FSMContext):
+    await state.set_state(Diagnostic.choosing_subject)
+    await message.answer(SUBJECT_CHOICE_TEXT, reply_markup=subject_kb())
+
+
+@router.message(Diagnostic.choosing_subject, F.text.in_(list(SUBJECT_BUTTONS.keys())))
+async def choose_subject(message: Message, state: FSMContext):
+    subject = SUBJECT_BUTTONS[message.text]
+    await state.update_data(subject=subject)
     await state.set_state(Diagnostic.choosing_exam)
-    await message.answer(EXAM_CHOICE_TEXT, reply_markup=exam_kb())
+    await message.answer(EXAM_CHOICE_TEXT, reply_markup=exam_kb(subject))
 
 
-@router.message(Diagnostic.choosing_exam, F.text.in_(list(EXAM_BUTTONS.keys())))
+@router.message(Diagnostic.choosing_subject, F.text == BACK_TEXT)
+async def subject_back(message: Message, state: FSMContext):
+    await start_welcome(message.answer, state, message.from_user)
+
+
+@router.message(Diagnostic.choosing_subject)
+async def choose_subject_fallback(message: Message):
+    await message.answer("Пожалуйста, выбери один из вариантов на клавиатуре ниже 👇")
+
+
+@router.message(Diagnostic.choosing_exam, F.text == BACK_TEXT)
+async def exam_back(message: Message, state: FSMContext):
+    await state.set_state(Diagnostic.choosing_subject)
+    await message.answer(SUBJECT_CHOICE_TEXT, reply_markup=subject_kb())
+
+
+@router.message(Diagnostic.choosing_exam)
 async def choose_exam(message: Message, state: FSMContext):
-    exam = EXAM_BUTTONS[message.text]
+    data = await state.get_data()
+    subject = data["subject"]
+    buttons = EXAM_BUTTONS_BY_SUBJECT[subject]
+    if message.text not in buttons:
+        await message.answer("Пожалуйста, выбери один из вариантов на клавиатуре ниже 👇")
+        return
+    exam = buttons[message.text]
     await state.update_data(exam=exam)
     await state.set_state(Diagnostic.entering_name)
     await message.answer(NAME_PROMPT_TEXT, reply_markup=name_prompt_kb())
 
 
-@router.message(Diagnostic.choosing_exam, F.text == BACK_TEXT)
-async def exam_back(message: Message, state: FSMContext):
-    await start_welcome(message.answer, state, message.from_user)
-
-
-@router.message(Diagnostic.choosing_exam)
-async def choose_exam_fallback(message: Message):
-    await message.answer("Пожалуйста, выбери один из вариантов на клавиатуре ниже 👇")
-
-
 @router.message(Diagnostic.entering_name, F.text == BACK_TEXT)
 async def name_back(message: Message, state: FSMContext):
+    data = await state.get_data()
     await state.set_state(Diagnostic.choosing_exam)
-    await message.answer(EXAM_CHOICE_TEXT, reply_markup=exam_kb())
+    await message.answer(EXAM_CHOICE_TEXT, reply_markup=exam_kb(data["subject"]))
 
 
 @router.message(Diagnostic.entering_name)
@@ -504,8 +633,9 @@ async def choose_grade(message: Message, state: FSMContext):
 
 @router.message(Diagnostic.choosing_grade, F.text == BACK_TEXT)
 async def grade_back(message: Message, state: FSMContext):
+    data = await state.get_data()
     await state.set_state(Diagnostic.choosing_exam)
-    await message.answer(EXAM_CHOICE_TEXT, reply_markup=exam_kb())
+    await message.answer(EXAM_CHOICE_TEXT, reply_markup=exam_kb(data["subject"]))
 
 
 @router.message(Diagnostic.choosing_grade)
@@ -534,8 +664,9 @@ async def begin_tasks_fallback(message: Message):
 async def send_task(message: Message, state: FSMContext):
     data = await state.get_data()
     idx = data["task_index"]
-    task = tasks_for(data["exam"])[idx]
-    header = f"Задание {idx + 1}/10\n\n"
+    tasks = tasks_for(data["subject"], data["exam"])
+    task = tasks[idx]
+    header = f"Задание {idx + 1}/{len(tasks)}\n\n"
     kb = answer_kb(task)
     if task.image:
         try:
@@ -580,23 +711,25 @@ async def task_back(message: Message, state: FSMContext):
 @router.message(Diagnostic.answering)
 async def receive_answer(message: Message, state: FSMContext):
     data = await state.get_data()
-    task = tasks_for(data["exam"])[data["task_index"]]
+    task = tasks_for(data["subject"], data["exam"])[data["task_index"]]
     await record_answer(state, task, message.text)
     await advance(message, state)
 
 
 async def advance(message: Message, state: FSMContext):
     data = await state.get_data()
-    if data["task_index"] < 10:
+    total = len(tasks_for(data["subject"], data["exam"]))
+    if data["task_index"] < total:
         await send_task(message, state)
     else:
         await finish_diagnostic(message, state)
 
 
-def grade_comment(score: int) -> str:
-    if score >= 8:
+def grade_comment(score: int, total: int) -> str:
+    ratio = score / total if total else 0
+    if ratio >= 0.8:
         return "Очень сильный результат! Видно хорошую базу — можно сразу переходить к более сложным темам и разбору задач второй части."
-    if score >= 5:
+    if ratio >= 0.5:
         return "Хороший старт: часть тем усвоена уверенно, а часть стоит подтянуть — на занятиях разберём точечно, что именно."
     return "Пока много пробелов, и это нормально на старте — с системной подготовкой результат заметно вырастет."
 
@@ -626,18 +759,19 @@ def build_breakdown(results: list[dict]) -> str:
 async def finish_diagnostic(message: Message, state: FSMContext):
     data = await state.get_data()
     results = data["results"]
+    total = len(results)
     score = sum(1 for r in results if r["status"] == "correct")
     name = data["name"]
 
     await message.answer(
-        RESULT_TEMPLATE.format(name=name, score=score, grade_comment=grade_comment(score)),
+        RESULT_TEMPLATE.format(name=name, score=score, total=total, grade_comment=grade_comment(score, total)),
         reply_markup=ReplyKeyboardRemove(),
     )
     await message.answer(build_breakdown(results))
     await message.answer(build_recommendation(results))
     await message.answer(CTA_TEXT, reply_markup=cta_kb())
 
-    await send_report(message.bot, data, score, results)
+    await send_report(message.bot, data, score, total, results)
     await state.clear()
 
 
@@ -649,16 +783,18 @@ def student_contact_line(data: dict) -> str:
     return f"Telegram: username не указан (id {user_id})"
 
 
-async def send_report(bot: Bot, data: dict, score: int, results: list[dict]) -> None:
-    exam_label = EXAM_LABELS[data["exam"]]
+async def send_report(bot: Bot, data: dict, score: int, total: int, results: list[dict]) -> None:
+    subject_label = SUBJECT_LABELS[data["subject"]]
+    exam_label = EXAM_LABELS_BY_SUBJECT[data["subject"]][data["exam"]]
     weak = [r["topic"] for r in results if r["status"] != "correct"]
     lines = [
         "📋 Новый результат диагностики",
         f"Имя: {data['name']}",
         f"Класс: {data['grade']}",
+        f"Предмет: {subject_label}",
         f"Экзамен: {exam_label}",
         student_contact_line(data),
-        f"Результат: {score}/10",
+        f"Результат: {score}/{total}",
         "",
         build_breakdown(results),
     ]
